@@ -117,9 +117,11 @@ private func pageImage(_ text: String) -> NSImage {
     }
 }
 
-/// App-icon style tile: rounded square with a vertical gradient, a soft
-/// top sheen and a white symbol, like the icons in the Dock.
-func appIcon(_ symbol: String, top: NSColor, bottom: NSColor) -> NSImage {
+/// App-icon style tile in the Dock's "clear" look: translucent frosted
+/// square, soft top sheen and a white symbol, no color.
+func appIcon(_ symbol: String,
+             top: NSColor = NSColor.white.withAlphaComponent(0.30),
+             bottom: NSColor = NSColor.white.withAlphaComponent(0.10)) -> NSImage {
     let side: CGFloat = 128
     return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
         let body = rect.insetBy(dx: 8, dy: 10).offsetBy(dx: 0, dy: 2)
@@ -127,11 +129,11 @@ func appIcon(_ symbol: String, top: NSColor, bottom: NSColor) -> NSImage {
 
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
         shadow.shadowBlurRadius = 6
         shadow.shadowOffset = NSSize(width: 0, height: -3)
         shadow.set()
-        bottom.setFill()
+        NSColor.black.withAlphaComponent(0.15).setFill()
         shape.fill()
         NSGraphicsContext.restoreGraphicsState()
 
@@ -141,7 +143,7 @@ func appIcon(_ symbol: String, top: NSColor, bottom: NSColor) -> NSImage {
         NSGradient(colors: [NSColor.white.withAlphaComponent(0.28), NSColor.white.withAlphaComponent(0)])?
             .draw(in: NSRect(x: body.minX, y: body.midY, width: body.width, height: body.height / 2), angle: -90)
         NSGraphicsContext.restoreGraphicsState()
-        NSColor.white.withAlphaComponent(0.25).setStroke()
+        NSColor.white.withAlphaComponent(0.35).setStroke()
         shape.lineWidth = 1
         shape.stroke()
 
@@ -299,13 +301,9 @@ final class ToolsWidget {
 
     init() {
         [clipView, shelfView].forEach(root.addSubview)
-        clipView.placeholder = appIcon("doc.on.clipboard.fill",
-                                       top: NSColor(red: 0.36, green: 0.78, blue: 1.00, alpha: 1),
-                                       bottom: NSColor(red: 0.04, green: 0.42, blue: 0.96, alpha: 1))
+        clipView.placeholder = appIcon("doc.on.clipboard.fill")
         clipView.toolTip = "Portapapeles"
-        shelfView.placeholder = appIcon("tray.and.arrow.down.fill",
-                                        top: NSColor(red: 0.75, green: 0.55, blue: 1.00, alpha: 1),
-                                        bottom: NSColor(red: 0.42, green: 0.20, blue: 0.90, alpha: 1))
+        shelfView.placeholder = appIcon("tray.and.arrow.down.fill")
         shelfView.toolTip = "Bandeja: suelta archivos aquí"
         panel = DockPanel(content: root)
 
