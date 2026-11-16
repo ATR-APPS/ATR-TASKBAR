@@ -91,9 +91,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // like the Windows build: start with the system unless the user opts out
     private func addToLoginItemsOnFirstRun() {
-        guard !defaults.bool(forKey: "loginConfigured") else { return }
-        defaults.set(true, forKey: "loginConfigured")
-        try? SMAppService.mainApp.register()
+        let path = Bundle.main.bundlePath
+        guard defaults.bool(forKey: "loginConfigured") else {
+            defaults.set(true, forKey: "loginConfigured")
+            if (try? SMAppService.mainApp.register()) != nil { defaults.set(path, forKey: "loginPath") }
+            return
+        }
+        // the login item keeps the path it was registered from: move it to
+        // the installed copy once, so it never points at a build folder
+        let service = SMAppService.mainApp
+        guard path.hasPrefix("/Applications/"), service.status == .enabled,
+              defaults.string(forKey: "loginPath") != path else { return }
+        try? service.unregister()
+        if (try? service.register()) != nil { defaults.set(path, forKey: "loginPath") }
     }
 }
 
