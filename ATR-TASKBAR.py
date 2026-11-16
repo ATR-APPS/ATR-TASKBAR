@@ -8,7 +8,7 @@ import ctypes.wintypes as wintypes
 from PIL import Image, ImageDraw
 import pystray
 from pystray import MenuItem as item
-from media_widget import TaskbarMediaWidget
+from media_widget import TaskbarMediaWidget, WNDPROC, WNDCLASSEXW
 
 APP_NAME = "ATR-TASKBAR"
 
@@ -22,12 +22,24 @@ WINEVENT_OUTOFCONTEXT      = 0x0000
 EVENT_SYSTEM_FOREGROUND    = 0x0003
 EVENT_SYSTEM_MINIMIZESTART = 0x0016
 EVENT_SYSTEM_MINIMIZEEND   = 0x0017
-EVENT_OBJECT_DESTROY       = 0x8001
-OBJID_WINDOW               = 0
+
+# shell hook: only fires for windows that own a taskbar button
+HSHELL_WINDOWCREATED   = 1
+HSHELL_WINDOWDESTROYED = 2
+HSHELL_WINDOWREPLACED  = 13
+
+FALLBACK_INTERVAL = 15.0  # periodic safety re-check (s)
+FOLLOWUP_DELAY    = 0.4   # second pass after an event, buttons may still animate
 
 _user32   = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 _ole32    = ctypes.windll.ole32
+
+_user32.SetWinEventHook.restype  = wintypes.HANDLE
+_user32.UnhookWinEvent.argtypes  = [wintypes.HANDLE]
+_user32.RegisterShellHookWindow.argtypes   = [wintypes.HWND]
+_user32.DeregisterShellHookWindow.argtypes = [wintypes.HWND]
+_user32.RegisterWindowMessageW.restype     = wintypes.UINT
 
 _paused           = False
 _running          = True
@@ -211,22 +223,53 @@ _WinEventProc = ctypes.WINFUNCTYPE(
 )
 
 def _on_win_event(hHook, event, hwnd, idObject, idChild, tid, evt_time):
-    if event == EVENT_OBJECT_DESTROY and idObject != OBJID_WINDOW:
-        return
     _reposition_event.set()
 
 _win_event_proc = _WinEventProc(_on_win_event)
+
+_SHELLHOOK_MSG = 0
+
+
+def _shell_proc(hwnd, msg, wparam, lparam):
+    if msg == _SHELLHOOK_MSG and _SHELLHOOK_MSG:
+        if wparam in (HSHELL_WINDOWCREATED, HSHELL_WINDOWDESTROYED, HSHELL_WINDOWREPLACED):
+            _reposition_event.set()
+        return 0
+    return _user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+_shell_wndproc = WNDPROC(_shell_proc)
+
+
+def _create_shell_hook_window():
+    global _SHELLHOOK_MSG
+    hinst = _kernel32.GetModuleHandleW(None)
+    wc = WNDCLASSEXW()
+    wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+    wc.lpfnWndProc = _shell_wndproc
+    wc.hInstance = hinst
+    wc.lpszClassName = "ATRTaskbarShellHook"
+    _user32.RegisterClassExW(ctypes.byref(wc))
+    hwnd = _user32.CreateWindowExW(0x80, "ATRTaskbarShellHook", "", 0,  # WS_EX_TOOLWINDOW, hidden
+                                   0, 0, 0, 0, None, None, hinst, None)
+    if not hwnd:
+        return None
+    _SHELLHOOK_MSG = _user32.RegisterWindowMessageW("SHELLHOOK")
+    if not _user32.RegisterShellHookWindow(hwnd):
+        _user32.DestroyWindow(hwnd)
+        return None
+    return hwnd
 
 
 def _hook_thread_func():
     global _hook_thread_id
     _hook_thread_id = _kernel32.GetCurrentThreadId()
 
+    shell_hwnd = _create_shell_hook_window()
+
     hooks = []
     for evmin, evmax in [
         (EVENT_SYSTEM_FOREGROUND,    EVENT_SYSTEM_FOREGROUND),
         (EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND),
-        (EVENT_OBJECT_DESTROY,       EVENT_OBJECT_DESTROY),
     ]:
         h = _user32.SetWinEventHook(
             evmin, evmax, None, _win_event_proc, 0, 0, WINEVENT_OUTOFCONTEXT,
@@ -244,16 +287,24 @@ def _hook_thread_func():
 
     for h in hooks:
         _user32.UnhookWinEvent(h)
+    if shell_hwnd:
+        _user32.DeregisterShellHookWindow(shell_hwnd)
+        _user32.DestroyWindow(shell_hwnd)
 
 
 def _worker_func():
     _ole32.CoInitialize(None)
+    timeout = FALLBACK_INTERVAL
     while _running:
-        _reposition_event.wait(timeout=2.0)
+        triggered = _reposition_event.wait(timeout=timeout)
         if not _running:
             break
-        time.sleep(0.05)
-        _reposition_event.clear()
+        if triggered:
+            time.sleep(0.05)  # debounce bursts of events
+            _reposition_event.clear()
+            timeout = FOLLOWUP_DELAY
+        else:
+            timeout = FALLBACK_INTERVAL
         if not _paused:
             try:
                 _center_taskbar()

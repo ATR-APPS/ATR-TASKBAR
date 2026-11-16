@@ -1,12 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('logo\\logo.png', 'logo')]
+datas = [('logo/logo.png', 'logo')]
 binaries = []
 hiddenimports = ['pystray._win32']
-for pkg in ('comtypes', 'winrt'):
-    tmp_ret = collect_all(pkg)
-    datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('comtypes')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('winrt')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
@@ -43,5 +44,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['logo\\logo.ico'],
+    icon=['logo/logo.ico'],
 )

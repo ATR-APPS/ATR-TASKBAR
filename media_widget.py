@@ -126,6 +126,7 @@ def _rect(hwnd):
 # ── Media state ──────────────────────────────────────────────────────────────
 
 PAUSED_LINGER = 60.0  # seconds a paused session stays visible
+POLL_FALLBACK = 5.0   # safety re-poll; changes normally arrive via WinRT events
 
 
 class _Media:
@@ -172,6 +173,8 @@ class _MediaWatcher:
         self._session = None
         self._covers = {}
         self._paused_since = {}
+        self._subs = {}  # app id -> (session, playback token, properties token)
+        self._wake = None
         self.current = None
 
     def start(self):
@@ -194,17 +197,60 @@ class _MediaWatcher:
         asyncio.set_event_loop(self._loop)
         self._loop.run_until_complete(self._main())
 
+    def _notify(self, *_):
+        # WinRT events arrive on arbitrary threads
+        try:
+            self._loop.call_soon_threadsafe(self._wake.set)
+        except Exception:
+            pass
+
+    def _sync_subscriptions(self, sessions):
+        current = {}
+        for s in sessions:
+            try:
+                current[s.source_app_user_model_id or ""] = s
+            except Exception:
+                pass
+        for app in list(self._subs):
+            if app not in current:
+                s, t1, t2 = self._subs.pop(app)
+                try:
+                    s.remove_playback_info_changed(t1)
+                    s.remove_media_properties_changed(t2)
+                except Exception:
+                    pass
+        for app, s in current.items():
+            if app in self._subs:
+                continue
+            try:
+                t1 = s.add_playback_info_changed(self._notify)
+                t2 = s.add_media_properties_changed(self._notify)
+                self._subs[app] = (s, t1, t2)
+            except Exception:
+                pass
+
     async def _main(self):
+        self._wake = asyncio.Event()
         manager = None
         while True:
             try:
                 if manager is None:
                     manager = await _SessionManager.request_async()
+                    self._subs.clear()
+                    try:
+                        manager.add_sessions_changed(self._notify)
+                    except Exception:
+                        pass
                 self._manager = manager
                 await self._poll()
             except Exception:
                 manager = None
-            await asyncio.sleep(1.0)
+            try:
+                await asyncio.wait_for(self._wake.wait(), timeout=POLL_FALLBACK)
+                await asyncio.sleep(0.1)  # coalesce event bursts
+            except asyncio.TimeoutError:
+                pass
+            self._wake.clear()
 
     @staticmethod
     def _priority(app_id):
@@ -219,7 +265,9 @@ class _MediaWatcher:
     async def _poll(self):
         now = time.monotonic()
         candidates = []
-        for s in self._manager.get_sessions():
+        sessions = list(self._manager.get_sessions())
+        self._sync_subscriptions(sessions)
+        for s in sessions:
             try:
                 app = s.source_app_user_model_id or ""
                 playing = s.get_playback_info().playback_status == _Status.PLAYING
@@ -417,7 +465,7 @@ class TaskbarMediaWidget:
             if not self.hwnd:
                 time.sleep(2.0)
                 continue
-            _user32.SetTimer(self.hwnd, 1, 500, None)
+            _user32.SetTimer(self.hwnd, 1, 2000, None)
             self._tick()
 
             msg = wt.MSG()
