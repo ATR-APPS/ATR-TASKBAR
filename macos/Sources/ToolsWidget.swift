@@ -117,12 +117,59 @@ private func pageImage(_ text: String) -> NSImage {
     }
 }
 
+/// App-icon style tile: rounded square with a vertical gradient, a soft
+/// top sheen and a white symbol, like the icons in the Dock.
+func appIcon(_ symbol: String, top: NSColor, bottom: NSColor) -> NSImage {
+    let side: CGFloat = 128
+    return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+        let body = rect.insetBy(dx: 8, dy: 10).offsetBy(dx: 0, dy: 2)
+        let shape = NSBezierPath(roundedRect: body, xRadius: body.width * 0.225, yRadius: body.width * 0.225)
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        shadow.shadowBlurRadius = 6
+        shadow.shadowOffset = NSSize(width: 0, height: -3)
+        shadow.set()
+        bottom.setFill()
+        shape.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        NSGradient(starting: top, ending: bottom)?.draw(in: shape, angle: -90)
+        NSGraphicsContext.saveGraphicsState()
+        shape.addClip()
+        NSGradient(colors: [NSColor.white.withAlphaComponent(0.28), NSColor.white.withAlphaComponent(0)])?
+            .draw(in: NSRect(x: body.minX, y: body.midY, width: body.width, height: body.height / 2), angle: -90)
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.white.withAlphaComponent(0.25).setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+
+        let config = NSImage.SymbolConfiguration(pointSize: body.height * 0.44, weight: .medium)
+            .applying(.init(paletteColors: [.white]))
+        if let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) {
+            let g = glyph.size
+            let r = NSRect(x: body.midX - g.width / 2, y: body.midY - g.height / 2, width: g.width, height: g.height)
+            NSGraphicsContext.saveGraphicsState()
+            let glow = NSShadow()
+            glow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+            glow.shadowBlurRadius = 2
+            glow.shadowOffset = NSSize(width: 0, height: -1)
+            glow.set()
+            glyph.draw(in: r)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        return true
+    }
+}
+
 /// Square tile that draws its images as a pile, newest on top, like the
 /// Downloads stack. Click target that covers the whole tile.
 private class StackView: NSView {
     var onClick: ((NSView) -> Void)?
     var images: [NSImage] = [] { didSet { needsDisplay = true } }
-    var placeholder = "tray"
+    var placeholder: NSImage?  // drawn while the stack is empty
     fileprivate var pressed: NSEvent?
     fileprivate var highlighted = false { didSet { needsDisplay = true } }
 
@@ -140,13 +187,7 @@ private class StackView: NSView {
             NSBezierPath(roundedRect: bounds, xRadius: bounds.width * 0.22, yRadius: bounds.width * 0.22).fill()
         }
         guard !images.isEmpty else {
-            let symbol = NSImage(systemSymbolName: placeholder, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: bounds.height * 0.42, weight: .light))
-            if let symbol, let tinted = tinted(symbol, .secondaryLabelColor) {
-                let r = NSRect(x: (bounds.width - tinted.size.width) / 2, y: (bounds.height - tinted.size.height) / 2,
-                               width: tinted.size.width, height: tinted.size.height)
-                tinted.draw(in: r)
-            }
+            placeholder?.draw(in: bounds.insetBy(dx: bounds.width * 0.06, dy: bounds.height * 0.06))
             return
         }
         // back to front: older items peek out rotated behind the newest
@@ -169,16 +210,6 @@ private class StackView: NSView {
             img.draw(in: NSRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
             NSGraphicsContext.restoreGraphicsState()
         }
-    }
-
-    private func tinted(_ image: NSImage, _ color: NSColor) -> NSImage? {
-        let out = NSImage(size: image.size, flipped: false) { rect in
-            image.draw(in: rect)
-            color.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        return out
     }
 }
 
@@ -268,9 +299,13 @@ final class ToolsWidget {
 
     init() {
         [clipView, shelfView].forEach(root.addSubview)
-        clipView.placeholder = "doc.on.clipboard"
+        clipView.placeholder = appIcon("doc.on.clipboard.fill",
+                                       top: NSColor(red: 0.36, green: 0.78, blue: 1.00, alpha: 1),
+                                       bottom: NSColor(red: 0.04, green: 0.42, blue: 0.96, alpha: 1))
         clipView.toolTip = "Portapapeles"
-        shelfView.placeholder = "tray.and.arrow.down"
+        shelfView.placeholder = appIcon("tray.and.arrow.down.fill",
+                                        top: NSColor(red: 0.75, green: 0.55, blue: 1.00, alpha: 1),
+                                        bottom: NSColor(red: 0.42, green: 0.20, blue: 0.90, alpha: 1))
         shelfView.toolTip = "Bandeja: suelta archivos aquí"
         panel = DockPanel(content: root)
 
