@@ -60,3 +60,29 @@ python ATR-TASKBAR.py
 ```bat
 python inspect_taskbar.py
 ```
+
+---
+
+## macOS (branch `macos`)
+
+Version nativa en Swift para Mac, en la carpeta `macos/`. En macOS el Dock ya esta centrado, asi que aqui solo vive el widget de musica: aparece **abajo a la izquierda**, alineado con el Dock, con la portada, el titulo y el artista de lo que suena en Spotify o en YouTube (Brave, Chrome, Edge, Arc, Vivaldi, Safari).
+
+- Click sobre el widget: pausa / reanuda.
+- En pausa se atenua y desaparece despues de 60 segundos.
+- Icono en la barra de menus: **Mostrar musica**, **Iniciar con macOS**, **Salir**.
+- Visible en todos los Escritorios; se oculta en apps a pantalla completa.
+
+### Compilar e instalar
+
+**Requisitos:** macOS 13+ y Xcode Command Line Tools (`xcode-select --install`).
+
+```bash
+./macos/build.sh             # genera macos/build/ATR-TASKBAR.app
+./macos/build.sh --install   # ademas la copia a /Applications y la abre
+```
+
+### Permisos
+
+- La primera vez macOS pide permiso para que ATR-TASKBAR controle Spotify y tu navegador (Ajustes del Sistema > Privacidad y seguridad > Automatizacion).
+- Para saber si un video de YouTube esta en pausa y poder pausarlo con un click, activa en el navegador **Ver > Opciones para desarrolladores > Permitir JavaScript desde eventos de Apple** (en Safari: Desarrollo > Permitir JavaScript desde eventos de Apple). Sin esto el video se muestra igual, pero siempre como reproduciendo.
+- Firefox no es compatible (no expone sus pestañas a AppleScript).
