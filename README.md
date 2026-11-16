@@ -65,17 +65,11 @@ python inspect_taskbar.py
 
 ## macOS (branch `macos`)
 
-Version nativa en Swift para Mac, en la carpeta `macos/`. En macOS el Dock ya esta centrado, asi que aqui viven widgets junto al Dock. El de musica aparece **abajo a la izquierda**, alineado con el Dock, con la portada, el titulo y el artista de lo que suena en Spotify o en YouTube (Brave, Chrome, Edge, Arc, Vivaldi, Safari).
+Version nativa en Swift para Mac, en la carpeta `macos/`. En macOS el Dock ya esta centrado, asi que aqui solo vive el widget de musica: aparece **abajo a la izquierda**, alineado con el Dock, con la portada, el titulo y el artista de lo que suena en Spotify o en YouTube (Brave, Chrome, Edge, Arc, Vivaldi, Safari).
 
 - Click sobre el widget: pausa / reanuda.
 - En pausa se atenua y desaparece despues de 60 segundos.
-
-**Abajo a la derecha: portapapeles y bandeja**
-
-- **Portapapeles:** pila con lo ultimo que copiaste, como la pila de Descargas del Dock (el texto se ve como una hojita). Click: lista de las ultimas 10 copias; elegir una la vuelve a copiar. Solo en memoria (no se guarda en disco) e ignora lo que los gestores de contrasenas marcan como privado.
-- **Bandeja:** pila con vista previa de los archivos; suelta archivos encima para guardarlos y arrastralos despues a donde quieras (al sacarlos se quitan de la bandeja). Click: se abre una cuadricula con vista previa (como Descargas en el Dock): click abre el archivo, arrastrarlo lo saca, click derecho para verlo en Finder o quitarlo.
-
-- Icono en la barra de menus: **Mostrar musica**, **Mostrar portapapeles y bandeja**, **Iniciar con macOS**, **Salir**.
+- Icono en la barra de menus: **Mostrar musica**, **Iniciar con macOS**, **Salir**.
 - Visible en todos los Escritorios; se oculta en apps a pantalla completa.
 
 ### Compilar e instalar

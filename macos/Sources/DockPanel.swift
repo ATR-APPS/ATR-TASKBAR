@@ -1,6 +1,6 @@
-// Shared pieces of the widgets that sit next to the Dock: where the Dock
-// band is, a floating glass panel on the Dock's level, and the
-// "square tile + title / subtitle" row they all draw.
+// Pieces of the widget that sits next to the Dock: where the Dock band is,
+// a floating glass panel on the Dock's level, and the
+// "square tile + title / subtitle" row it draws.
 
 import AppKit
 
@@ -176,23 +176,4 @@ func squared(_ img: NSImage) -> NSImage {
     let rect = CGRect(x: (cg.width - s) / 2, y: (cg.height - s) / 2, width: s, height: s)
     guard let crop = cg.cropping(to: rect) else { return img }
     return NSImage(cgImage: crop, size: NSSize(width: s, height: s))
-}
-
-/// Menu item that runs a closure.
-final class ActionItem: NSMenuItem {
-    private let handler: () -> Void
-
-    init(_ title: String, image: NSImage? = nil, handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire), keyEquivalent: "")
-        target = self
-        if let image {
-            image.size = NSSize(width: 16, height: 16)
-            self.image = image
-        }
-    }
-
-    required init(coder: NSCoder) { fatalError() }
-
-    @objc private func fire() { handler() }
 }
