@@ -17,7 +17,8 @@ struct Media: Equatable {
 }
 
 private let pausedLinger: TimeInterval = 60  // seconds a paused session stays visible
-private let pollInterval: TimeInterval = 2   // browsers have no change events
+private let pollInterval: TimeInterval = 2   // browsers have no change events: poll
+private let idleInterval: TimeInterval = 5   // ... slower while no YouTube tab is open
 
 private let spotifyID = "com.spotify.client"
 
@@ -128,20 +129,42 @@ final class MediaWatcher {
     private var scripts: [String: NSAppleScript] = [:]
     private var pausedSince: [String: Date] = [:]
     private var current: Media?
+    private var interval: TimeInterval = 0
+    private var enabled = true
+    // Spotify is only queried when it announces a change (or (re)launches)
+    private var spotify: Media?
+    private var spotifyDirty = true
 
     func start() {
-        // Spotify announces its changes; browsers are polled
         DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.spotify.client.PlaybackStateChanged"),
             object: nil, queue: nil
         ) { [weak self] _ in
-            self?.queue.asyncAfter(deadline: .now() + 0.1) { self?.poll() }
+            self?.queue.asyncAfter(deadline: .now() + 0.1) {
+                self?.spotifyDirty = true
+                self?.poll()
+            }
         }
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: pollInterval, leeway: .milliseconds(500))
         t.setEventHandler { [weak self] in self?.poll() }
-        t.resume()
         timer = t
+        reschedule(pollInterval)
+        t.resume()
+    }
+
+    /// Stops querying the players while the widget is turned off.
+    func setEnabled(_ on: Bool) {
+        queue.async {
+            self.enabled = on
+            self.spotifyDirty = true
+            if on { self.poll() }
+        }
+    }
+
+    private func reschedule(_ seconds: TimeInterval) {
+        guard seconds != interval else { return }
+        interval = seconds
+        timer?.schedule(deadline: .now() + seconds, repeating: seconds, leeway: .milliseconds(500))
     }
 
     func toggle() {
@@ -153,6 +176,7 @@ final class MediaWatcher {
             let window = parts.count > 1 ? parts[1] : ""
             let tab = parts.count > 2 ? parts[2] : ""
             _ = self.run(toggleScript(bundleID: bundleID, window: window, tab: tab), cache: false)
+            self.spotifyDirty = true
             self.poll()
         }
     }
@@ -175,13 +199,21 @@ final class MediaWatcher {
 
     private func candidates() -> [Media] {
         var found: [Media] = []
-        if isRunning(spotifyID), let out = run(spotifyScript), !out.isEmpty {
-            let f = out.components(separatedBy: "\t")
-            if f.count >= 4, !f[1].isEmpty {
-                found.append(Media(id: "spotify", title: f[1], artist: f[2],
-                                   artwork: URL(string: f[3]), playing: f[0] == "playing"))
+        if !isRunning(spotifyID) {
+            spotify = nil
+            spotifyDirty = true  // read it once when it opens again
+        } else if spotifyDirty {
+            spotifyDirty = false
+            spotify = nil
+            if let out = run(spotifyScript), !out.isEmpty {
+                let f = out.components(separatedBy: "\t")
+                if f.count >= 4, !f[1].isEmpty {
+                    spotify = Media(id: "spotify", title: f[1], artist: f[2],
+                                    artwork: URL(string: f[3]), playing: f[0] == "playing")
+                }
             }
         }
+        if let spotify { found.append(spotify) }
         for b in browsers where isRunning(b.bundleID) {
             guard let out = run(listScript(b)) else { continue }
             for line in out.split(separator: "\n") {
@@ -199,8 +231,10 @@ final class MediaWatcher {
     }
 
     private func poll() {
+        guard enabled else { return }
         let now = Date()
         let found = candidates()
+        reschedule(found.contains { $0.id != "spotify" } ? pollInterval : idleInterval)
 
         var live: [Media] = []
         for m in found {
