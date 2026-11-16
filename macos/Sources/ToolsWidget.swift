@@ -1,12 +1,14 @@
-// Widget at the bottom-right of the screen, next to the Dock, with two parts:
+// Widget at the bottom-right of the screen, next to the Dock.
+// Two Dock-sized tiles drawn as piles, like the Downloads stack:
 //
-//  - Clipboard: shows the last thing copied; click opens the last 10 copies
+//  - Clipboard: the last copies piled up; click opens the last 10 copies
 //    and picking one puts it back on the clipboard. Kept in memory only and
 //    skips what password managers mark as concealed / transient.
 //  - Shelf: drop files on it to park them, drag them out to drop them
 //    anywhere else (they leave the shelf). Click lists them.
 
 import AppKit
+import QuickLookThumbnailing
 
 // MARK: - Clipboard history
 
@@ -76,7 +78,8 @@ final class ClipboardHistory {
         if let s = pb.string(forType: .string), !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let line = s.split(whereSeparator: \.isNewline).first { !$0.allSatisfy(\.isWhitespace) } ?? ""
             let title = line.trimmingCharacters(in: .whitespaces)
-            return Item(content: .text(s), title: String(title.prefix(200)), kind: "Texto", preview: nil)
+            return Item(content: .text(s), title: String(title.prefix(200)), kind: "Texto",
+                        preview: pageImage(s))
         }
         for type in [NSPasteboard.PasteboardType.png, .tiff] {
             if let data = pb.data(forType: type), let img = NSImage(data: data) {
@@ -91,10 +94,36 @@ final class ClipboardHistory {
 
 // MARK: - Views
 
-/// Click target that covers its labels; `onClick` gets the view to anchor a menu.
-private class SegmentView: NSView {
+/// Text clip drawn as a small page with its first lines, like a document
+/// thumbnail in a Dock stack.
+private func pageImage(_ text: String) -> NSImage {
+    let size = NSSize(width: 60, height: 76)
+    return NSImage(size: size, flipped: false) { rect in
+        let page = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
+        NSColor.white.setFill()
+        page.fill()
+        NSColor.black.withAlphaComponent(0.15).setStroke()
+        page.stroke()
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byCharWrapping
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 6.5),
+            .foregroundColor: NSColor.black.withAlphaComponent(0.75),
+            .paragraphStyle: style,
+        ]
+        NSString(string: String(text.prefix(300))).draw(in: rect.insetBy(dx: 6, dy: 7), withAttributes: attrs)
+        return true
+    }
+}
+
+/// Square tile that draws its images as a pile, newest on top, like the
+/// Downloads stack. Click target that covers the whole tile.
+private class StackView: NSView {
     var onClick: ((NSView) -> Void)?
+    var images: [NSImage] = [] { didSet { needsDisplay = true } }
+    var placeholder = "tray"
     fileprivate var pressed: NSEvent?
+    fileprivate var highlighted = false { didSet { needsDisplay = true } }
 
     override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -103,9 +132,56 @@ private class SegmentView: NSView {
         defer { pressed = nil }
         if pressed != nil, bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?(self) }
     }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if highlighted {
+            NSColor.controlAccentColor.withAlphaComponent(0.35).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: bounds.width * 0.22, yRadius: bounds.width * 0.22).fill()
+        }
+        guard !images.isEmpty else {
+            let symbol = NSImage(systemSymbolName: placeholder, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: bounds.height * 0.42, weight: .light))
+            if let symbol, let tinted = tinted(symbol, .secondaryLabelColor) {
+                let r = NSRect(x: (bounds.width - tinted.size.width) / 2, y: (bounds.height - tinted.size.height) / 2,
+                               width: tinted.size.width, height: tinted.size.height)
+                tinted.draw(in: r)
+            }
+            return
+        }
+        // back to front: older items peek out rotated behind the newest
+        let angles: [CGFloat] = [0, 7, -7]
+        let side = bounds.height * 0.8
+        for i in (0..<min(images.count, 3)).reversed() {
+            let img = images[i]
+            let ratio = img.size.width / max(img.size.height, 1)
+            let size = ratio >= 1 ? NSSize(width: side, height: side / ratio) : NSSize(width: side * ratio, height: side)
+            NSGraphicsContext.saveGraphicsState()
+            let t = NSAffineTransform()
+            t.translateX(by: bounds.midX, yBy: bounds.midY + CGFloat(i) * bounds.height * 0.03)
+            t.rotate(byDegrees: angles[i])
+            t.concat()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.set()
+            img.draw(in: NSRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    private func tinted(_ image: NSImage, _ color: NSColor) -> NSImage? {
+        let out = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        return out
+    }
 }
 
-private final class ShelfView: SegmentView, NSDraggingSource {
+private final class ShelfView: StackView, NSDraggingSource {
     var files: () -> [URL] = { [] }
     var onDrop: (([URL]) -> Void)?
     var onDraggedOut: (([URL]) -> Void)?
@@ -113,18 +189,10 @@ private final class ShelfView: SegmentView, NSDraggingSource {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
         registerForDraggedTypes([.fileURL])
     }
 
     required init?(coder: NSCoder) { fatalError() }
-
-    private var highlighted = false {
-        didSet {
-            layer?.backgroundColor = highlighted
-                ? NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor : nil
-        }
-    }
 
     // drop in
     private func urls(_ info: NSDraggingInfo) -> [URL] {
@@ -156,7 +224,7 @@ private final class ShelfView: SegmentView, NSDraggingSource {
         pressed = nil
         dragging = files()
         guard !dragging.isEmpty else { return }
-        let side = bounds.height * 0.72
+        let side = bounds.height * 0.8
         let items = dragging.enumerated().map { i, url -> NSDraggingItem in
             let item = NSDraggingItem(pasteboardWriter: url as NSURL)
             let offset = CGFloat(min(i, 4)) * 4
@@ -188,21 +256,20 @@ final class ToolsWidget {
 
     private let clipboard = ClipboardHistory()
     private var shelf: [URL] = []
+    private var thumbnails: [URL: NSImage] = [:]
 
     private let root = NSView()
-    private let clipView = SegmentView()
+    private let clipView = StackView()
     private let shelfView = ShelfView(frame: .zero)
-    private let divider = NSBox()
-    private let clipRow: TileRow
-    private let shelfRow: TileRow
     private let panel: DockPanel
     private var shownBand: DockBand?
 
     init() {
-        divider.boxType = .separator
-        [clipView, divider, shelfView].forEach(root.addSubview)
-        clipRow = TileRow(in: clipView)
-        shelfRow = TileRow(in: shelfView)
+        [clipView, shelfView].forEach(root.addSubview)
+        clipView.placeholder = "doc.on.clipboard"
+        clipView.toolTip = "Portapapeles"
+        shelfView.placeholder = "tray.and.arrow.down"
+        shelfView.toolTip = "Bandeja: suelta archivos aquí"
         panel = DockPanel(content: root)
 
         clipboard.onChange = { [weak self] in self?.update(force: true) }
@@ -231,37 +298,38 @@ final class ToolsWidget {
         if !force, band == shownBand { return }
         let h = band.height
 
-        if let last = clipboard.items.first {
-            clipRow.title.stringValue = last.title
-            clipRow.subtitle.stringValue = last.kind
-            clipRow.setTile(last.preview, symbol: "doc.on.clipboard", height: h)
-        } else {
-            clipRow.title.stringValue = "Portapapeles"
-            clipRow.subtitle.stringValue = "Vacío"
-            clipRow.setTile(nil, symbol: "doc.on.clipboard", height: h)
-        }
+        clipView.images = clipboard.items.prefix(3).compactMap(\.preview)
+        shelfView.images = shelf.prefix(3).map { thumbnail($0) }
 
-        shelfRow.title.stringValue = "Bandeja"
-        switch shelf.count {
-        case 0: shelfRow.subtitle.stringValue = "Suelta archivos"
-        case 1: shelfRow.subtitle.stringValue = shelf[0].lastPathComponent
-        default: shelfRow.subtitle.stringValue = "\(shelf.count) archivos"
-        }
-        shelfRow.setTile(shelf.first.map { NSWorkspace.shared.icon(forFile: $0.path) },
-                         symbol: "tray.and.arrow.down", height: h)
+        // two Dock-sized tiles, nothing else
+        let tile = (h * 0.86).rounded()
+        let pad = ((h - tile) / 2).rounded()
+        let gap = (h * 0.12).rounded()
+        clipView.frame = NSRect(x: pad + 2, y: pad, width: tile, height: tile)
+        shelfView.frame = NSRect(x: pad + 2 + tile + gap, y: pad, width: tile, height: tile)
+        let width = pad * 2 + 4 + tile * 2 + gap
 
-        let clipW = clipRow.layout(height: h, maxText: 160)
-        let shelfW = shelfRow.layout(height: h, maxText: 110)
-        let inset = (h * 0.2).rounded()
-        clipView.frame = NSRect(x: 0, y: 0, width: clipW, height: h)
-        divider.frame = NSRect(x: clipW, y: inset, width: 1, height: h - inset * 2)
-        shelfView.frame = NSRect(x: clipW + 1, y: 0, width: shelfW, height: h)
-        shelfView.layer?.cornerRadius = h * 0.32
-
-        let width = clipW + 1 + shelfW
         panel.place(NSRect(x: band.maxX - width, y: band.y, width: width, height: h))
         shownBand = band
         panel.show()
+    }
+
+    /// Quick Look preview of a file (like the Downloads stack), its icon meanwhile.
+    private func thumbnail(_ url: URL) -> NSImage {
+        if let img = thumbnails[url] { return img }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        thumbnails[url] = icon
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 128, height: 128),
+                                                   scale: 2, representationTypes: .thumbnail)
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] rep, _ in
+            guard let image = rep?.nsImage else { return }
+            DispatchQueue.main.async {
+                guard let self, self.shelf.contains(url) else { return }
+                self.thumbnails[url] = image
+                self.update(force: true)
+            }
+        }
+        return icon
     }
 
     // MARK: - Shelf
@@ -273,6 +341,7 @@ final class ToolsWidget {
 
     private func remove(_ urls: [URL]) {
         shelf.removeAll { urls.contains($0) }
+        thumbnails = thumbnails.filter { shelf.contains($0.key) }
         update(force: true)
     }
 
@@ -333,8 +402,7 @@ final class ToolsWidget {
         if !shelf.isEmpty {
             menu.addItem(.separator())
             menu.addItem(ActionItem("Vaciar bandeja") { [weak self] in
-                self?.shelf.removeAll()
-                self?.update(force: true)
+                self?.remove(self?.shelf ?? [])
             })
         }
         popUp(menu, from: view)

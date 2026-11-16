@@ -72,8 +72,8 @@ Version nativa en Swift para Mac, en la carpeta `macos/`. En macOS el Dock ya es
 
 **Abajo a la derecha: portapapeles y bandeja**
 
-- **Portapapeles:** muestra lo ultimo que copiaste (texto, imagen o archivo). Click: lista de las ultimas 10 copias; elegir una la vuelve a copiar. Solo en memoria (no se guarda en disco) e ignora lo que los gestores de contrasenas marcan como privado.
-- **Bandeja:** suelta archivos encima para guardarlos y arrastralos despues a donde quieras (al sacarlos se quitan de la bandeja). Click: lista de archivos para verlos en Finder; con ⌥ presionado, para quitarlos.
+- **Portapapeles:** pila con lo ultimo que copiaste, como la pila de Descargas del Dock (el texto se ve como una hojita). Click: lista de las ultimas 10 copias; elegir una la vuelve a copiar. Solo en memoria (no se guarda en disco) e ignora lo que los gestores de contrasenas marcan como privado.
+- **Bandeja:** pila con vista previa de los archivos; suelta archivos encima para guardarlos y arrastralos despues a donde quieras (al sacarlos se quitan de la bandeja). Click: lista de archivos para verlos en Finder; con ⌥ presionado, para quitarlos.
 
 - Icono en la barra de menus: **Mostrar musica**, **Mostrar portapapeles y bandeja**, **Iniciar con macOS**, **Salir**.
 - Visible en todos los Escritorios; se oculta en apps a pantalla completa.
