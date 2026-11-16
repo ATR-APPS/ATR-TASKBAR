@@ -53,32 +53,39 @@ end tell
 """
 
 /// One line per YouTube tab: window id, tab ref, url, title, state.
+/// All URLs come back in a single Apple Event; only YouTube tabs are then
+/// queried one by one, so idle polling stays one round trip per browser.
 private func listScript(_ b: Browser) -> String {
     let title = b.safari ? "name" : "title"
-    let tabRef = b.safari ? "i" : "(id of t)"
+    let tabRef = b.safari ? "ti" : "(id of t)"
     let exec = b.safari ? "do JavaScript \"\(stateJS)\" in t" : "execute t javascript \"\(stateJS)\""
     return """
     set sep to character id 9
     set out to ""
-    tell application id "\(b.bundleID)"
-        repeat with w in windows
-            try
-                set wid to id of w
-                set i to 0
-                repeat with t in tabs of w
-                    set i to i + 1
-                    set u to URL of t
-                    if u is not missing value and u contains "youtube.com/watch" then
+    try
+        tell application id "\(b.bundleID)" to set allURLs to URL of every tab of every window
+    on error
+        return ""
+    end try
+    repeat with wi from 1 to count of allURLs
+        set urls to item wi of allURLs
+        repeat with ti from 1 to count of urls
+            set u to item ti of urls
+            if u is not missing value and u contains "youtube.com/watch" then
+                tell application id "\(b.bundleID)"
+                    try
+                        set w to window wi
+                        set t to tab ti of w
                         set vstate to "unknown"
                         try
                             set vstate to \(exec)
                         end try
-                        set out to out & wid & sep & \(tabRef) & sep & u & sep & (\(title) of t) & sep & vstate & linefeed
-                    end if
-                end repeat
-            end try
+                        set out to out & (id of w) & sep & \(tabRef) & sep & u & sep & (\(title) of t) & sep & vstate & linefeed
+                    end try
+                end tell
+            end if
         end repeat
-    end tell
+    end repeat
     return out
     """
 }

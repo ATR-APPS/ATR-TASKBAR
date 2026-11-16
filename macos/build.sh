@@ -33,6 +33,7 @@ codesign --force --sign - "$APP"
 
 if [[ "${1:-}" == "--install" ]]; then
     pkill -x ATR-TASKBAR 2>/dev/null || true
+    while pgrep -x ATR-TASKBAR >/dev/null; do sleep 0.2; done  # else `open` fails with -600
     rm -rf /Applications/ATR-TASKBAR.app
     cp -R "$APP" /Applications/
     echo "Installed: /Applications/ATR-TASKBAR.app"

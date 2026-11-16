@@ -16,10 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var geometryTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let others = NSRunningApplication.runningApplications(
-            withBundleIdentifier: Bundle.main.bundleIdentifier ?? ""
-        ).filter { $0 != .current }
-        if !others.isEmpty {
+        guard isSingleInstance() else {
             NSApp.terminate(nil)
             return
         }
@@ -98,6 +95,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defaults.set(true, forKey: "loginConfigured")
         try? SMAppService.mainApp.register()
     }
+}
+
+/// Holds an exclusive lock for the life of the process. The kernel drops it
+/// the moment a previous instance dies, unlike the running-apps list, which
+/// can still show an instance that is quitting.
+private func isSingleInstance() -> Bool {
+    let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("com.atr.taskbar.lock")
+    let fd = open(path, O_CREAT | O_RDWR, 0o600)
+    return fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0  // fd stays open on purpose
 }
 
 let app = NSApplication.shared
