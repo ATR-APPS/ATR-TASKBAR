@@ -1,5 +1,6 @@
 // Now-playing widget at the bottom-left of the screen, next to the Dock.
-// Square cover + title / artist; left click toggles play / pause.
+// Square cover + title / artist; a click unfolds previous / play-pause / next
+// controls above it.
 
 import AppKit
 
@@ -26,10 +27,12 @@ private final class HitView: NSView {
     override func mouseExited(with event: NSEvent) { NSCursor.pop() }
 }
 
+private final class ControlButton: NSButton {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class MediaWidget {
-    var onClick: (() -> Void)? {
-        didSet { hit.onClick = onClick }
-    }
+    var onCommand: ((MediaCommand) -> Void)?
     var enabled = true {
         didSet { update() }
     }
@@ -37,6 +40,12 @@ final class MediaWidget {
     private let hit = HitView(frame: .zero)
     private let panel: DockPanel
     private let row: TileRow
+
+    private let controlsView = NSView()
+    private let controls: DockPanel
+    private var buttons: [(button: NSButton, command: MediaCommand)] = []
+    private var expanded = false
+    private var outsideClicks: Any?
 
     private var media: Media?
     private var shown: (media: Media, band: DockBand, art: Bool)?
@@ -46,6 +55,18 @@ final class MediaWidget {
     init() {
         panel = DockPanel(content: hit)
         row = TileRow(in: hit)
+        controls = DockPanel(content: controlsView)
+        for command in [MediaCommand.previous, .toggle, .next] {
+            let b = ControlButton(frame: .zero)
+            b.isBordered = false
+            b.imagePosition = .imageOnly
+            b.contentTintColor = .labelColor
+            b.target = self
+            b.action = #selector(pressed(_:))
+            controlsView.addSubview(b)
+            buttons.append((b, command))
+        }
+        hit.onClick = { [weak self] in self?.setExpanded(!(self?.expanded ?? true)) }
     }
 
     // MARK: - Public
@@ -59,6 +80,7 @@ final class MediaWidget {
     func update() {
         guard enabled, let m = media, let band = DockBand.current() else {
             shown = nil
+            setExpanded(false)
             panel.hide()
             return
         }
@@ -75,6 +97,53 @@ final class MediaWidget {
         hit.alphaValue = m.playing ? 1 : 0.55
         shown = (m, band, art != nil)
         panel.show()
+        layoutControls()
+    }
+
+    // MARK: - Controls
+
+    @objc private func pressed(_ sender: NSButton) {
+        guard let command = buttons.first(where: { $0.button === sender })?.command else { return }
+        onCommand?(command)
+    }
+
+    private func setExpanded(_ on: Bool) {
+        guard on != expanded else { return }
+        expanded = on
+        if on {
+            layoutControls()
+            controls.show(rise: 10)
+            // a click anywhere else folds the controls back
+            outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+                [weak self] _ in self?.setExpanded(false)
+            }
+        } else {
+            controls.hide()
+            if let m = outsideClicks { NSEvent.removeMonitor(m) }
+            outsideClicks = nil
+        }
+    }
+
+    /// Same width as the widget, stacked right above it.
+    private func layoutControls() {
+        guard let (m, band, _) = shown else { return }
+        let h = (band.height * 0.8).rounded()
+        let width = row.layout(height: band.height, maxText: 220)
+        let symbol = NSImage.SymbolConfiguration(pointSize: (h * 0.36).rounded(), weight: .semibold)
+        let slot = width / CGFloat(buttons.count)
+        for (i, item) in buttons.enumerated() {
+            let name: String
+            switch item.command {
+            case .previous: name = "backward.fill"
+            case .toggle: name = m.playing ? "pause.fill" : "play.fill"
+            case .next: name = "forward.fill"
+            }
+            item.button.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(symbol)
+            item.button.frame = NSRect(x: (slot * CGFloat(i)).rounded(), y: 0, width: slot.rounded(), height: h)
+        }
+        let gap = (band.height * 0.15).rounded()
+        controls.place(NSRect(x: band.minX, y: band.y + band.height + gap, width: width, height: h))
     }
 
     // MARK: - Internals

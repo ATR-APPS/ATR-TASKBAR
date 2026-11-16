@@ -59,13 +59,20 @@ final class DockPanel {
         setGlassRadius(panel, frame.height * 0.32)
     }
 
-    func show() {
+    /// Fades in; with `rise`, also slides up that many points into place.
+    func show(rise: CGFloat = 0) {
         guard !visible else { return }
         visible = true
+        let target = panel.frame
+        if rise > 0 {
+            panel.setFrame(target.offsetBy(dx: 0, dy: -rise), display: false)
+        }
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
+            if rise > 0 { panel.animator().setFrame(target, display: true) }
         }
     }
 
@@ -89,6 +96,7 @@ func installGlass(in panel: NSPanel, content: NSView) {
         glass.contentView = content
         panel.contentView = glass
         panel.hasShadow = false
+        GlassStyle.shared.track(glass)
     } else {
         let blur = NSVisualEffectView()
         blur.material = .popover
@@ -100,6 +108,38 @@ func installGlass(in panel: NSPanel, content: NSView) {
         content.autoresizingMask = [.width, .height]
         panel.contentView = blur
         panel.hasShadow = true
+    }
+}
+
+/// Keeps every glass view on the same style as the Dock: System Settings >
+/// Appearance > Liquid Glass "Clear" (NSGlassDiffusionSetting = 0) or "Tinted".
+@available(macOS 26.0, *)
+final class GlassStyle: NSObject {
+    static let shared = GlassStyle()
+    private static let key = "NSGlassDiffusionSetting"
+    private let views = NSHashTable<NSGlassEffectView>.weakObjects()
+
+    private override init() {
+        super.init()
+        UserDefaults.standard.addObserver(self, forKeyPath: Self.key, options: [], context: nil)
+    }
+
+    var style: NSGlassEffectView.Style {
+        let value = UserDefaults.standard.object(forKey: Self.key) as? Int
+        return value == 0 ? .clear : .regular
+    }
+
+    func track(_ view: NSGlassEffectView) {
+        views.add(view)
+        view.style = style
+    }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?,
+                               change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        DispatchQueue.main.async {
+            let style = self.style
+            for view in self.views.allObjects { view.style = style }
+        }
     }
 }
 

@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defaults.register(defaults: ["showMedia": true])
         widget.enabled = defaults.bool(forKey: "showMedia")
         watcher.setEnabled(widget.enabled)
-        widget.onClick = { [weak self] in self?.watcher.toggle() }
+        widget.onCommand = { [weak self] command in self?.watcher.send(command) }
         watcher.onChange = { [weak self] media in self?.widget.show(media) }
         watcher.start()
 

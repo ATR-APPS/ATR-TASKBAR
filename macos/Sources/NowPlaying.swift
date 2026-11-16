@@ -38,6 +38,29 @@ private let browsers = [
 
 private let stateJS = "(function(){var v=document.querySelector('video');return v?(v.paused?'paused':'playing'):'none'})()"
 private let toggleJS = "(function(){var v=document.querySelector('video');if(v){v.paused?v.play():v.pause()}})()"
+// previous restarts the video unless it is near the start and a playlist has a previous one
+private let previousJS = "(function(){var v=document.querySelector('video');var b=document.querySelector('.ytp-prev-button,.previous-button');if(v&&v.currentTime<3&&b&&b.offsetParent){b.click()}else if(v){v.currentTime=0}})()"
+private let nextJS = "(function(){var b=document.querySelector('.ytp-next-button,.next-button');if(b){b.click()}})()"
+
+enum MediaCommand {
+    case previous, toggle, next
+
+    fileprivate var js: String {
+        switch self {
+        case .previous: return previousJS
+        case .toggle: return toggleJS
+        case .next: return nextJS
+        }
+    }
+
+    fileprivate var spotifyVerb: String {
+        switch self {
+        case .previous: return "previous track"
+        case .toggle: return "playpause"
+        case .next: return "next track"
+        }
+    }
+}
 
 private let spotifyScript = """
 set sep to character id 9
@@ -90,21 +113,21 @@ private func listScript(_ b: Browser) -> String {
     """
 }
 
-private func toggleScript(bundleID: String, window: String, tab: String) -> String {
+private func commandScript(_ command: MediaCommand, bundleID: String, window: String, tab: String) -> String {
     if bundleID == spotifyID {
-        return "tell application id \"\(spotifyID)\" to playpause"
+        return "tell application id \"\(spotifyID)\" to \(command.spotifyVerb)"
     }
     if bundleID == "com.apple.Safari" {
         return """
         tell application id "\(bundleID)"
-            do JavaScript "\(toggleJS)" in tab \(tab) of (first window whose id is \(window))
+            do JavaScript "\(command.js)" in tab \(tab) of (first window whose id is \(window))
         end tell
         """
     }
     return """
     tell application id "\(bundleID)"
         set w to first window whose id is \(window)
-        execute (first tab of w whose id is \(tab)) javascript "\(toggleJS)"
+        execute (first tab of w whose id is \(tab)) javascript "\(command.js)"
     end tell
     """
 }
@@ -174,7 +197,7 @@ final class MediaWatcher {
         timer?.schedule(deadline: .now() + seconds, repeating: seconds, leeway: .milliseconds(500))
     }
 
-    func toggle() {
+    func send(_ command: MediaCommand) {
         queue.async {
             guard let m = self.current else { return }
             let parts = m.id.components(separatedBy: "|")
@@ -182,9 +205,14 @@ final class MediaWatcher {
             guard isRunning(bundleID) else { return }
             let window = parts.count > 1 ? parts[1] : ""
             let tab = parts.count > 2 ? parts[2] : ""
-            _ = self.run(toggleScript(bundleID: bundleID, window: window, tab: tab), cache: false)
+            _ = self.run(commandScript(command, bundleID: bundleID, window: window, tab: tab), cache: false)
             self.spotifyDirty = true
-            self.poll()
+            // the player needs a moment to load the next / previous item
+            if command == .toggle {
+                self.poll()
+            } else {
+                self.queue.asyncAfter(deadline: .now() + 0.8) { self.poll() }
+            }
         }
     }
 
