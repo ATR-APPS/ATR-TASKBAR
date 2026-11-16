@@ -5,7 +5,8 @@
 //    and picking one puts it back on the clipboard. Kept in memory only and
 //    skips what password managers mark as concealed / transient.
 //  - Shelf: drop files on it to park them, drag them out to drop them
-//    anywhere else (they leave the shelf). Click lists them.
+//    anywhere else (they leave the shelf). Click opens them as a grid
+//    (ShelfGrid).
 
 import AppKit
 import QuickLookThumbnailing
@@ -261,6 +262,7 @@ final class ToolsWidget {
     private let root = NSView()
     private let clipView = StackView()
     private let shelfView = ShelfView(frame: .zero)
+    private let grid = ShelfGrid()
     private let panel: DockPanel
     private var shownBand: DockBand?
 
@@ -274,10 +276,14 @@ final class ToolsWidget {
 
         clipboard.onChange = { [weak self] in self?.update(force: true) }
         clipView.onClick = { [weak self] view in self?.showClipboardMenu(from: view) }
-        shelfView.onClick = { [weak self] view in self?.showShelfMenu(from: view) }
+        shelfView.onClick = { [weak self] view in self?.grid.toggle(from: view) }
         shelfView.files = { [weak self] in self?.shelf ?? [] }
         shelfView.onDrop = { [weak self] urls in self?.add(urls) }
         shelfView.onDraggedOut = { [weak self] urls in self?.remove(urls) }
+        grid.files = { [weak self] in self?.shelf ?? [] }
+        grid.thumbnail = { [weak self] url in self?.thumbnail(url) ?? NSWorkspace.shared.icon(forFile: url.path) }
+        grid.onDrop = { [weak self] urls in self?.add(urls) }
+        grid.onRemove = { [weak self] urls in self?.remove(urls) }
     }
 
     /// Called on the geometry timer: follows the Dock and the clipboard.
@@ -319,14 +325,14 @@ final class ToolsWidget {
         if let img = thumbnails[url] { return img }
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         thumbnails[url] = icon
-        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 128, height: 128),
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 168, height: 168),
                                                    scale: 2, representationTypes: .thumbnail)
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] rep, _ in
             guard let image = rep?.nsImage else { return }
             DispatchQueue.main.async {
                 guard let self, self.shelf.contains(url) else { return }
                 self.thumbnails[url] = image
-                self.update(force: true)
+                self.shelfChanged()
             }
         }
         return icon
@@ -336,13 +342,18 @@ final class ToolsWidget {
 
     private func add(_ urls: [URL]) {
         shelf.append(contentsOf: urls.filter { !shelf.contains($0) })
-        update(force: true)
+        shelfChanged()
     }
 
     private func remove(_ urls: [URL]) {
         shelf.removeAll { urls.contains($0) }
         thumbnails = thumbnails.filter { shelf.contains($0.key) }
+        shelfChanged()
+    }
+
+    private func shelfChanged() {
         update(force: true)
+        if grid.isOpen { grid.reload() }
     }
 
     // MARK: - Menus
@@ -372,38 +383,6 @@ final class ToolsWidget {
         if !clipboard.items.isEmpty {
             menu.addItem(.separator())
             menu.addItem(ActionItem("Limpiar historial") { [weak self] in self?.clipboard.clear() })
-        }
-        popUp(menu, from: view)
-    }
-
-    private func showShelfMenu(from view: NSView) {
-        let menu = NSMenu()
-        let header = NSMenuItem(title: "Bandeja — arrastra para sacar", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        if shelf.isEmpty {
-            let empty = NSMenuItem(title: "Suelta archivos aquí para guardarlos", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-        }
-        for url in shelf {
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            menu.addItem(ActionItem(url.lastPathComponent, image: icon) {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            })
-            // hold ⌥ to remove instead
-            let remove = ActionItem("Quitar \(url.lastPathComponent)", image: icon) { [weak self] in
-                self?.remove([url])
-            }
-            remove.isAlternate = true
-            remove.keyEquivalentModifierMask = .option
-            menu.addItem(remove)
-        }
-        if !shelf.isEmpty {
-            menu.addItem(.separator())
-            menu.addItem(ActionItem("Vaciar bandeja") { [weak self] in
-                self?.remove(self?.shelf ?? [])
-            })
         }
         popUp(menu, from: view)
     }

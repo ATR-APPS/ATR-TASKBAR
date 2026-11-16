@@ -29,8 +29,8 @@ struct DockBand: Equatable {
     }
 }
 
-/// Borderless panel on the Dock's window level, on all Spaces but not over
-/// fullscreen apps. Liquid Glass on macOS 26, blurred material before.
+/// Borderless glass panel on the Dock's window level, on all Spaces but not
+/// over fullscreen apps.
 final class DockPanel {
     let content: NSView
     private let panel: NSPanel
@@ -48,23 +48,7 @@ final class DockPanel {
         panel.isReleasedWhenClosed = false
         panel.alphaValue = 0
 
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.contentView = content
-            panel.contentView = glass
-            panel.hasShadow = false
-        } else {
-            let blur = NSVisualEffectView()
-            blur.material = .popover
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.masksToBounds = true
-            blur.addSubview(content)
-            content.autoresizingMask = [.width, .height]
-            panel.contentView = blur
-            panel.hasShadow = true
-        }
+        installGlass(in: panel, content: content)
     }
 
     func place(_ frame: NSRect) {
@@ -72,12 +56,7 @@ final class DockPanel {
             panel.setFrame(frame, display: true)
         }
         content.frame = NSRect(origin: .zero, size: frame.size)
-        let radius = frame.height * 0.32
-        if #available(macOS 26.0, *), let glass = panel.contentView as? NSGlassEffectView {
-            glass.cornerRadius = radius
-        } else {
-            panel.contentView?.layer?.cornerRadius = radius
-        }
+        setGlassRadius(panel, frame.height * 0.32)
     }
 
     func show() {
@@ -100,6 +79,35 @@ final class DockPanel {
             guard let self, !self.visible else { return }
             self.panel.orderOut(nil)
         })
+    }
+}
+
+/// Liquid Glass on macOS 26, blurred material before, holding `content`.
+func installGlass(in panel: NSPanel, content: NSView) {
+    if #available(macOS 26.0, *) {
+        let glass = NSGlassEffectView()
+        glass.contentView = content
+        panel.contentView = glass
+        panel.hasShadow = false
+    } else {
+        let blur = NSVisualEffectView()
+        blur.material = .popover
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.masksToBounds = true
+        blur.addSubview(content)
+        content.autoresizingMask = [.width, .height]
+        panel.contentView = blur
+        panel.hasShadow = true
+    }
+}
+
+func setGlassRadius(_ panel: NSPanel, _ radius: CGFloat) {
+    if #available(macOS 26.0, *), let glass = panel.contentView as? NSGlassEffectView {
+        glass.cornerRadius = radius
+    } else {
+        panel.contentView?.layer?.cornerRadius = radius
     }
 }
 
