@@ -173,7 +173,8 @@ final class MediaWidget {
         } ?? main
         let full = screen.frame
         let dock = screen.visibleFrame.minY - full.minY  // 0 when the Dock is on a side or hidden
-        let height: CGFloat = dock > 24 ? min(max(dock - 12, 36), 64) : 44
+        // the band is the Dock bar plus its margins: match the bar itself
+        let height: CGFloat = dock > 24 ? max(dock - 12, 28).rounded() : 44
         let y = dock > 24 ? full.minY + (dock - height) / 2 : full.minY + 6
         return (NSPoint(x: screen.visibleFrame.minX + 8, y: y.rounded()), height)
     }
@@ -181,8 +182,12 @@ final class MediaWidget {
     private func layout(height h: CGFloat) -> CGFloat {
         let coverSize = (h * 0.72).rounded()
         let pad = ((h - coverSize) / 2).rounded()
-        let gap: CGFloat = 10
-        let maxText: CGFloat = 220
+        // everything scales with the Dock: 13 / 11 pt at the default size
+        let scale = h / 47
+        let gap = (10 * scale).rounded()
+        let maxText = (220 * scale).rounded()
+        titleLabel.font = .systemFont(ofSize: (13 * scale).rounded(), weight: .semibold)
+        artistLabel.font = .systemFont(ofSize: (11 * scale).rounded())
 
         titleLabel.sizeToFit()
         artistLabel.sizeToFit()

@@ -37,10 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.widget.update() }
-        geometryTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        // the Dock posts nothing when it is resized: re-check often, it is
+        // just a read of the screen frames when nothing changed
+        geometryTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.widget.update()
         }
-        geometryTimer?.tolerance = 1
+        geometryTimer?.tolerance = 0.2
     }
 
     // MARK: - Menu bar
