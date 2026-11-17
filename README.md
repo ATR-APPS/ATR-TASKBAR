@@ -9,7 +9,7 @@ Corre en segundo plano como un icono en la bandeja del sistema y se ajusta autom
 Junto al boton de Inicio muestra la portada (en cuadrado) y el nombre de lo que estes escuchando en Spotify o viendo en YouTube (Brave, Chrome, Edge, Firefox), usando los controles de medios de Windows.
 
 - El widget vive dentro de la barra de tareas: sigue visible con Inicio abierto y se oculta junto con la barra en pantalla completa.
-- Click sobre el widget: pausa / reanuda.
+- Click sobre el widget: despliega justo encima una pastilla translucida (estilo macOS) con los controles: anterior, pausa / reanuda, siguiente. Se cierra con otro click en el widget, con un click fuera del panel o tras 5 segundos sin el mouse encima.
 - En pausa se atenua y desaparece despues de 60 segundos.
 - Se puede activar o desactivar desde el menu de la bandeja: **Mostrar musica**.
 
